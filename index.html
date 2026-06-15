@@ -297,7 +297,7 @@ const RANKS=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
 const SUITS=['♠','♥','♦','♣'];
 const CHIPS=[100,500,1000,5000,10000];
 let ROUND_SECS=40, BET_SECS=30;     // 서버(get_game_config)에서 받아와 덮어씀
-const APP_VERSION=2;                 // 배포할 때마다 +1, DB game_config.app_version 도 같이 올림
+const APP_VERSION=3;                 // 배포할 때마다 +1, DB game_config.app_version 도 같이 올림
 const MILESTONE=1000000;             // 순손익 이 값 이상이면 축하 공지
 const RECHARGE=100000;              // 충전 금액
 const RECHARGE_BELOW=100;           // 잔액이 이 값 미만일 때만 충전 가능
@@ -417,6 +417,14 @@ function inPlayChips(){
   const m=myShared();
   const shared=sh.settled?0:((m.player||0)+(m.banker||0)+(m.tie||0));  // 정산 전 공유 베팅
   return solo+shared;
+}
+// 랭킹용 유효 잔액 = 잔액 + 현재 베팅된(미정산) 금액
+function effBalance(p){
+  let bal=Number(p.balance);
+  if(p.id===me.id) return bal+inPlayChips();
+  const rb=sh.roundBets[p.id];
+  if(rb && sh.phase==='bet') bal += (rb.player||0)+(rb.banker||0)+(rb.tie||0);
+  return bal;
 }
 async function recharge(){
   if(me.balance+inPlayChips()>=RECHARGE_BELOW) return;
@@ -601,6 +609,7 @@ async function sharedLoop(){
   }
   renderTimer();
   if(tab==='shared') renderShared();
+  if(tab==='rank') renderRank();
   if(drawerOpen) renderOnline();
 }
 
@@ -744,15 +753,15 @@ function renderSpectate(){
 
 /* ===================== RANKING ===================== */
 function renderRank(){
-  const list=Object.values(playersCache).sort((a,b)=>b.balance-a.balance).slice(0,50);
+  const list=Object.values(playersCache).map(p=>({p, eff:effBalance(p)})).sort((a,b)=>b.eff-a.eff).slice(0,50);
   const medal=['🥇','🥈','🥉'];
-  document.getElementById('rankList').innerHTML = list.map((p,i)=>`
+  document.getElementById('rankList').innerHTML = list.map((x,i)=>{ const p=x.p; return `
     <div class="row ${p.id===me.id?'sel':''}">
       <span class="rank">${medal[i]||(i+1)}</span>
       <span class="nm">${escapeH(p.name)}${p.id===me.id?' (나)':''}</span>
       <span class="sub">순손익 ${p.net_winnings>=0?'+':''}${won(p.net_winnings)} · ${p.hands_played}판</span>
-      <span class="bal">${won(p.balance)}</span>
-    </div>`).join('') || '<div class="msg">아직 랭킹이 없습니다.</div>';
+      <span class="bal">${won(x.eff)}</span>
+    </div>`;}).join('') || '<div class="msg">아직 랭킹이 없습니다.</div>';
 }
 
 /* ===================== realtime ===================== */
@@ -770,6 +779,7 @@ function subscribeRealtime(){
     const r=payload.new; if(!r || r.round_no!==sh.round) return;
     addBetRow(r);
     if(tab==='shared') renderShared();
+    if(tab==='rank') renderRank();
   }).subscribe();
 
   sb.channel('chat-ch')
