@@ -106,6 +106,17 @@
     background:#0b3328f2; border:1px solid #ffffff26; border-radius:14px; padding:11px 13px; z-index:30;
     box-shadow:0 10px 26px #0009; font-size:13px;}
   @media(max-width:720px){ #h_betlist{position:static; width:auto; max-height:none; margin-top:12px; box-shadow:none;} }
+  /* 공유 탭 우측 하단 채팅 */
+  #chatBox{position:fixed; right:12px; bottom:12px; width:270px; z-index:40; display:flex; flex-direction:column;
+    background:#0b3328f2; border:1px solid #ffffff26; border-radius:14px; padding:11px 12px; box-shadow:0 10px 26px #0009;}
+  .chat-hd{font-weight:800; font-size:13px; margin-bottom:7px;}
+  .chat-sub{font-weight:600; font-size:11px; opacity:.5;}
+  .chat-msgs{height:200px; overflow-y:auto; font-size:13px; display:flex; flex-direction:column; gap:5px; margin-bottom:8px; word-break:break-word;}
+  .chat-msg{line-height:1.4;} .chat-msg .cn{font-weight:800; color:var(--gold);} .chat-msg.me .cn{color:#7CFC9A;}
+  .chat-input{display:flex; gap:6px;}
+  .chat-input input{flex:1; padding:8px 10px; font-size:13px;}
+  .chat-input .btn{padding:8px 12px; font-size:13px;}
+  @media(max-width:720px){ #chatBox{position:static; width:auto; margin-top:12px; box-shadow:none;} .chat-msgs{height:170px;} }
   .hint{font-size:12px; opacity:.55; margin-top:12px; line-height:1.6; text-align:center;}
 
   /* 우측 드로어 */
@@ -222,6 +233,14 @@
     </div>
     <div class="msg" id="h_msg"></div>
     <div class="betlist" id="h_betlist"></div>
+    <div id="chatBox">
+      <div class="chat-hd">💬 채팅 <span class="chat-sub">· 5분 후 사라짐</span></div>
+      <div class="chat-msgs" id="chatMsgs"></div>
+      <div class="chat-input">
+        <input id="chatInput" maxlength="300" placeholder="메시지 입력…" onkeydown="if(event.key==='Enter')sendChat()">
+        <button class="btn" onclick="sendChat()">전송</button>
+      </div>
+    </div>
     <div class="hint">40초 주기(베팅 30초 + 공개 10초) · 칩을 고르고 박스를 눌러 베팅액을 올린 뒤 <b>배팅</b>으로 확정 · 30초 마감 후 <b>딜</b>로 카드 공개(안 누르면 자동 공개). 모두가 같은 카드를 봅니다.</div>
   </div>
 
@@ -332,8 +351,10 @@ async function enterApp(){
   await settlePending();
   subscribeRealtime();
   await fetchPlayers();
+  await fetchChat();
   heartbeat();
   setInterval(heartbeat, 25000);
+  setInterval(pruneChat, 5000);
   setInterval(()=>{ syncTime(); loadConfig(); }, 120000);
   setInterval(sharedLoop, 250);
   sharedLoop();
@@ -365,7 +386,7 @@ function showTab(t){
   document.getElementById('page-'+t).classList.add('active');
   if(t==='people'){ fetchPlayers().then(renderPeople); }
   if(t==='rank'){ fetchPlayers().then(renderRank); }
-  if(t==='shared'){ renderShared(); }
+  if(t==='shared'){ renderShared(); renderChat(); }
 }
 
 /* ===================== chips ===================== */
@@ -679,6 +700,21 @@ function subscribeRealtime(){
     addBetRow(r);
     if(tab==='shared') renderShared();
   }).subscribe();
+
+  sb.channel('chat-ch')
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'chat_messages'},payload=>{
+      const m=payload.new; if(!m) return;
+      if(Date.now()-new Date(m.created_at).getTime() > CHAT_TTL) return;
+      if(chatMsgs.some(x=>x.id===m.id)) return;
+      chatMsgs.push({id:m.id,name:m.player_name,text:m.text,pid:m.player_id,ts:new Date(m.created_at).getTime()});
+      if(tab==='shared') renderChat();
+    })
+    .on('postgres_changes',{event:'DELETE',schema:'public',table:'chat_messages'},payload=>{
+      const id=payload.old&&payload.old.id; if(!id) return;
+      chatMsgs=chatMsgs.filter(x=>x.id!==id);
+      if(tab==='shared') renderChat();
+    })
+    .subscribe();
 }
 
 /* ===================== settle pending (missed rounds) ===================== */
@@ -701,6 +737,33 @@ async function settlePending(){
     }
     renderMe();
   }catch(e){}
+}
+
+/* ===================== chat (5분 TTL) ===================== */
+const CHAT_TTL=5*60*1000;
+let chatMsgs=[];
+async function fetchChat(){
+  const since=new Date(Date.now()-CHAT_TTL).toISOString();
+  const {data}=await sb.from('chat_messages').select('*').gt('created_at',since).order('created_at',{ascending:true});
+  chatMsgs=(data||[]).map(m=>({id:m.id,name:m.player_name,text:m.text,pid:m.player_id,ts:new Date(m.created_at).getTime()}));
+  renderChat();
+}
+function pruneChat(){
+  const cut=Date.now()-CHAT_TTL, before=chatMsgs.length;
+  chatMsgs=chatMsgs.filter(m=>m.ts>cut);
+  if(chatMsgs.length!==before && tab==='shared') renderChat();
+}
+function renderChat(){
+  if(tab!=='shared') return;
+  const box=document.getElementById('chatMsgs'); if(!box) return;
+  box.innerHTML = chatMsgs.map(m=>`<div class="chat-msg ${m.pid===me.id?'me':''}"><span class="cn">${escapeH(m.name)}</span> ${escapeH(m.text)}</div>`).join('')
+    || '<div style="opacity:.5;">채팅을 시작해보세요</div>';
+  box.scrollTop=box.scrollHeight;
+}
+async function sendChat(){
+  const inp=document.getElementById('chatInput'); const t=inp.value.trim();
+  if(!t) return; inp.value='';
+  try{ await sb.rpc('post_chat',{p_player:me.id,p_name:me.name,p_text:t}); }catch(e){}
 }
 
 /* ===================== online drawer ===================== */
