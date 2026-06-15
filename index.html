@@ -210,14 +210,19 @@
       <div class="road" id="h_road"></div>
     </div>
     <div class="bets">
-      <div class="betbox P" onclick="sharedBet('player')"><div class="bt" style="color:var(--player)">PLAYER</div><div class="ba" id="h_aP">&nbsp;</div><div class="all" id="h_tP"></div></div>
-      <div class="betbox T" onclick="sharedBet('tie')"><div class="bt" style="color:var(--tie)">TIE</div><div class="ba" id="h_aT">&nbsp;</div><div class="all" id="h_tT"></div></div>
-      <div class="betbox B" onclick="sharedBet('banker')"><div class="bt" style="color:var(--banker)">BANKER</div><div class="ba" id="h_aB">&nbsp;</div><div class="all" id="h_tB"></div></div>
+      <div class="betbox P" onclick="sharedStage('player')"><div class="bt" style="color:var(--player)">PLAYER</div><div class="ba" id="h_aP">&nbsp;</div><div class="all" id="h_tP"></div></div>
+      <div class="betbox T" onclick="sharedStage('tie')"><div class="bt" style="color:var(--tie)">TIE</div><div class="ba" id="h_aT">&nbsp;</div><div class="all" id="h_tT"></div></div>
+      <div class="betbox B" onclick="sharedStage('banker')"><div class="bt" style="color:var(--banker)">BANKER</div><div class="ba" id="h_aB">&nbsp;</div><div class="all" id="h_tB"></div></div>
     </div>
     <div class="chiprack" id="h_chips"></div>
+    <div class="actions">
+      <button class="btn ghost" id="h_clear" onclick="sharedClearStage()" disabled>베팅 취소</button>
+      <button class="btn" id="h_bet" onclick="sharedBetConfirm()" disabled>배팅</button>
+      <button class="btn" id="h_deal" onclick="sharedDeal()" disabled>딜</button>
+    </div>
     <div class="msg" id="h_msg"></div>
     <div class="betlist" id="h_betlist"></div>
-    <div class="hint">매 분 0초에 새 라운드 시작 · 0~30초 베팅 가능 · 30초에 카드 공개. 모두가 같은 카드를 봅니다.</div>
+    <div class="hint">칩을 고르고 박스를 눌러 베팅액을 올린 뒤 <b>배팅</b>으로 확정 · 0~30초 베팅 · 30초 마감 후 <b>딜</b>로 카드 공개(안 누르면 자동 공개). 모두가 같은 카드를 봅니다.</div>
   </div>
 
   <!-- PEOPLE / SPECTATE -->
@@ -452,11 +457,12 @@ function flashBox(pfx,result){ const m={player:pfx+'_boxP'}; /* shared boxes fla
 function renderRoad(id,arr){ document.getElementById(id).innerHTML=arr.slice(-40).map(r=>`<div class="bead ${r}">${r}</div>`).join(''); }
 
 /* ===================== SHARED ===================== */
-let sh={round:-1, seed:null, phase:'bet', revealed:false, settled:false, hand:null, roundBets:{}, road:[]};
+let sh={round:-1, seed:null, phase:'bet', revealed:false, settled:false, shown:false, hand:null, staged:{player:0,banker:0,tie:0}, roundBets:{}, road:[]};
 let sharedBusy=false;
 
 async function initRound(round){
-  sh.round=round; sh.seed=null; sh.revealed=false; sh.settled=false; sh.hand=null; sh.roundBets={};
+  sh.round=round; sh.seed=null; sh.revealed=false; sh.settled=false; sh.shown=false; sh.hand=null;
+  sh.staged={player:0,banker:0,tie:0}; sh.roundBets={};
   renderHand('h_pcards',[]); renderHand('h_bcards',[]);
   document.getElementById('h_ptot').textContent='-'; document.getElementById('h_btot').textContent='-';
   banner('h_result','베팅하세요');
@@ -475,18 +481,6 @@ function addBetRow(r){
 }
 function myShared(){ return sh.roundBets[me.id]||{player:0,banker:0,tie:0}; }
 
-async function sharedBet(side){
-  if(sh.phase!=='bet'){ smsg('베팅이 마감되었습니다.'); return; }
-  if(selectedChip>me.balance){ smsg('잔액이 부족합니다.'); return; }
-  try{
-    const {data,error}=await sb.rpc('place_shared_bet',{p_player:me.id,p_round:sh.round,p_side:side,p_amount:selectedChip});
-    if(error) throw error;
-    me.balance=Number(data.balance); renderMe();
-    sh.roundBets[me.id]=sh.roundBets[me.id]||{name:me.name,player:0,banker:0,tie:0};
-    sh.roundBets[me.id][side]+=selectedChip;
-    renderShared(); smsg('');
-  }catch(e){ smsg(transErr(e.message||'')); }
-}
 function transErr(m){
   if(m.includes('betting closed')) return '베팅 시간이 지났습니다.';
   if(m.includes('round closed')) return '라운드가 바뀌었습니다.';
@@ -500,25 +494,33 @@ async function sharedLoop(){
   if(round!==sh.round && !sharedBusy){ sharedBusy=true; await initRound(round); sharedBusy=false; }
   sh.sec=sec;
   if(sec<BET_SECS){ sh.phase='bet'; }
-  else { sh.phase='reveal'; if(!sh.revealed && sh.seed){ doReveal(round); } }
+  else {
+    sh.phase='reveal';
+    if(sh.staged.player||sh.staged.banker||sh.staged.tie) sh.staged={player:0,banker:0,tie:0};
+    if(!sh.revealed && sh.seed){ doSettle(round); }
+    if(sh.revealed && !sh.shown && sec>=BET_SECS+3){ showReveal(); }  // 딜 안 누르면 3초 후 자동 공개
+  }
   renderTimer();
   if(tab==='shared') renderShared();
   if(drawerOpen) renderOnline();
 }
 
-async function doReveal(round){
+async function doSettle(round){
   sh.revealed=true;
   sh.hand=dealFromSeed(sh.seed);
   sh.road.push(sh.hand.result==='player'?'P':sh.hand.result==='banker'?'B':'T');
-  // settle my bets (idempotent)
   if(!sh.settled){
     sh.settled=true;
-    const mine=myShared();
-    const ret=payout(sh.hand.result, mine);
+    const ret=payout(sh.hand.result, myShared());
     try{ const {data}=await sb.rpc('settle_shared',{p_round:round,p_player:me.id,p_returns:ret});
       if(data){ me.balance=Number(data.balance); me.net=Number(data.net_winnings); me.hands=data.hands_played; renderMe(); } }catch(e){}
   }
-  // animate
+  banner('h_result','카드 공개 — 딜을 누르세요');
+  if(tab==='shared') renderShared();
+}
+function showReveal(){
+  if(sh.shown || !sh.hand) return;
+  sh.shown=true;
   const h=sh.hand;
   rp('h',h,2,2);
   setTimeout(()=>rp('h',h,h.player.length,h.banker.length), 600);
@@ -527,6 +529,37 @@ async function doReveal(round){
   const net=payout(h.result,mine)-staked;
   const names={player:'PLAYER 승',banker:'BANKER 승',tie:'TIE'};
   flash('h_result', `${names[h.result]}${staked>0?' · '+(net>=0?'+':'')+won(net):''}`, net>0||(net===0&&staked===0));
+  if(tab==='shared') renderShared();
+}
+function sharedDeal(){ if(sh.phase==='reveal' && sh.revealed && !sh.shown) showReveal(); }
+
+/* 베팅 스테이징 + 확정 */
+function sharedStage(side){
+  if(sh.phase!=='bet'){ smsg('베팅 시간이 아닙니다.'); return; }
+  const t=sh.staged.player+sh.staged.banker+sh.staged.tie;
+  if(t+selectedChip > me.balance){ smsg('잔액이 부족합니다.'); return; }
+  sh.staged[side]+=selectedChip; smsg(''); renderShared();
+}
+function sharedClearStage(){ sh.staged={player:0,banker:0,tie:0}; renderShared(); }
+async function sharedBetConfirm(){
+  if(sh.phase!=='bet'){ smsg('베팅 시간이 아닙니다.'); return; }
+  const st={...sh.staged};
+  const total=st.player+st.banker+st.tie;
+  if(total===0) return;
+  if(total>me.balance){ smsg('잔액이 부족합니다.'); return; }
+  try{
+    for(const side of ['player','banker','tie']){
+      if(st[side]>0){
+        const {data,error}=await sb.rpc('place_shared_bet',{p_player:me.id,p_round:sh.round,p_side:side,p_amount:st[side]});
+        if(error) throw error;
+        me.balance=Number(data.balance);
+        sh.roundBets[me.id]=sh.roundBets[me.id]||{name:me.name,player:0,banker:0,tie:0};
+        sh.roundBets[me.id][side]+=st[side];
+      }
+    }
+    sh.staged={player:0,banker:0,tie:0};
+    renderMe(); renderShared(); smsg('베팅 완료');
+  }catch(e){ smsg(transErr(e.message||'')); renderMe(); }
 }
 
 function renderTimer(){
@@ -540,12 +573,21 @@ function renderShared(){
   const agg={player:0,banker:0,tie:0};
   Object.values(sh.roundBets).forEach(b=>{ agg.player+=b.player||0; agg.banker+=b.banker||0; agg.tie+=b.tie||0; });
   const mine=myShared();
-  document.getElementById('h_aP').innerHTML=mine.player?won(mine.player):'&nbsp;';
-  document.getElementById('h_aB').innerHTML=mine.banker?won(mine.banker):'&nbsp;';
-  document.getElementById('h_aT').innerHTML=mine.tie?won(mine.tie):'&nbsp;';
+  const boxAmt=side=>{ const c=mine[side]||0, s=sh.staged[side]||0;
+    if(!c && !s) return '&nbsp;';
+    let h=c?won(c):''; if(s) h+=(c?' ':'')+`<span style="color:#7CFC9A">+${won(s)}</span>`; return h; };
+  document.getElementById('h_aP').innerHTML=boxAmt('player');
+  document.getElementById('h_aB').innerHTML=boxAmt('banker');
+  document.getElementById('h_aT').innerHTML=boxAmt('tie');
   document.getElementById('h_tP').textContent=agg.player?('전체 '+won(agg.player)):'';
   document.getElementById('h_tB').textContent=agg.banker?('전체 '+won(agg.banker)):'';
   document.getElementById('h_tT').textContent=agg.tie?('전체 '+won(agg.tie)):'';
+  // 버튼 상태
+  const stagedTotal=sh.staged.player+sh.staged.banker+sh.staged.tie;
+  const betPhase=sh.phase==='bet';
+  document.getElementById('h_bet').disabled = !betPhase || stagedTotal===0;
+  document.getElementById('h_clear').disabled = !betPhase || stagedTotal===0;
+  document.getElementById('h_deal').disabled = !(sh.phase==='reveal' && sh.revealed && !sh.shown);
   renderRoad('h_road', sh.road);
   // 좌측 하단 실시간 베팅 현황 (누가 / 어디에 / 얼마)
   const rows=Object.entries(sh.roundBets).map(([pid,b])=>{
