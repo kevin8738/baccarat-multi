@@ -96,9 +96,32 @@
   .row.sel{outline:2px solid var(--gold);}
   .spec{margin-top:12px;}
   .msg{text-align:center; font-size:13px; min-height:18px; opacity:.9; margin-top:6px;}
-  .betlist{margin-top:10px; font-size:13px;}
-  .betlist .bl{display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid #ffffff14;}
+  .betlist .bl{display:flex; justify-content:space-between; gap:8px; padding:5px 0; border-bottom:1px solid #ffffff14;}
+  .betlist .bl .who{font-weight:700;} .betlist .bl .amt{color:var(--gold); font-weight:700; white-space:nowrap;}
+  .betlist .ttl{opacity:.85; font-weight:800; font-size:12px; margin-bottom:6px;}
+  /* 공유 탭 좌측 하단 실시간 베팅 현황 */
+  #h_betlist{position:fixed; left:12px; bottom:12px; width:250px; max-height:42vh; overflow:auto;
+    background:#0b3328f2; border:1px solid #ffffff26; border-radius:14px; padding:11px 13px; z-index:30;
+    box-shadow:0 10px 26px #0009; font-size:13px;}
+  @media(max-width:720px){ #h_betlist{position:static; width:auto; max-height:none; margin-top:12px; box-shadow:none;} }
   .hint{font-size:12px; opacity:.55; margin-top:12px; line-height:1.6; text-align:center;}
+
+  /* 우측 드로어 */
+  .drawer{position:fixed; top:0; right:0; height:100%; width:232px; z-index:60;
+    background:linear-gradient(180deg,#10493a,#0b3328); border-left:1px solid #ffffff22;
+    transform:translateX(100%); transition:transform .28s ease; box-shadow:-8px 0 24px #0007;}
+  .drawer.open{transform:translateX(0);}
+  .drawer-handle{position:absolute; left:-38px; top:50%; transform:translateY(-50%);
+    width:38px; height:70px; border-radius:12px 0 0 12px; background:#ffffff14; backdrop-filter:blur(5px);
+    -webkit-backdrop-filter:blur(5px); border:1px solid #ffffff2e; border-right:none; display:flex;
+    align-items:center; justify-content:center; cursor:pointer; color:#eaf6f0;}
+  .drawer-handle .chev{font-size:22px; font-weight:900; transition:transform .28s ease;}
+  .drawer.open .drawer-handle .chev{transform:rotate(180deg);}
+  .drawer-body{padding:20px 16px; height:100%; overflow:auto;}
+  .drawer-body h3{margin:0 0 12px; font-size:15px;}
+  .online-row{display:flex; align-items:center; gap:8px; padding:9px 0; border-bottom:1px solid #ffffff16;}
+  .online-row .nm{font-weight:700; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .online-row .bal{font-size:12px; color:var(--gold); font-weight:800;}
 </style>
 </head>
 <body>
@@ -117,6 +140,16 @@
 
 <!-- APP -->
 <div id="app" style="display:none;">
+
+  <!-- 우측 접속자 드로어 -->
+  <div id="drawer" class="drawer">
+    <div class="drawer-handle" onclick="toggleDrawer()"><span class="chev">›</span></div>
+    <div class="drawer-body">
+      <h3>접속 중 (<span id="onlineCount">0</span>)</h3>
+      <div id="onlineList"></div>
+    </div>
+  </div>
+
   <div class="hdr">
     <div><h1>🎴 바카라 멀티</h1><div class="me" id="meName">-</div></div>
     <div style="text-align:right;">
@@ -181,7 +214,7 @@
     <div class="chiprack" id="h_chips"></div>
     <div class="msg" id="h_msg"></div>
     <div class="betlist" id="h_betlist"></div>
-    <div class="hint">매 분 0초에 새 라운드 시작 · 0~50초 베팅 가능 · 50초에 카드 공개. 모두가 같은 카드를 봅니다.</div>
+    <div class="hint">매 분 0초에 새 라운드 시작 · 0~30초 베팅 가능 · 30초에 카드 공개. 모두가 같은 카드를 봅니다.</div>
   </div>
 
   <!-- PEOPLE / SPECTATE -->
@@ -206,12 +239,14 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const RANKS=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
 const SUITS=['♠','♥','♦','♣'];
 const CHIPS=[100,500,1000,5000,10000];
+const ROUND_SECS=60, BET_SECS=30;   // 매 분 라운드, 베팅 30초
 
 let me = null;             // {id,name,balance,net,hands}
 let tab = 'solo';
 let timeOffset = 0;        // serverMs - localMs
 let playersCache = {};
 let watching = null;
+let drawerOpen = false;
 
 function won(n){ return Math.round(n).toLocaleString('ko-KR'); }
 function srvNow(){ return (Date.now()+timeOffset)/1000; }      // epoch seconds (server-aligned)
@@ -449,13 +484,14 @@ function transErr(m){
 
 async function sharedLoop(){
   if(!me) return;
-  const t=srvNow(); const round=Math.floor(t/60); const sec=t-round*60;
+  const t=srvNow(); const round=Math.floor(t/ROUND_SECS); const sec=t-round*ROUND_SECS;
   if(round!==sh.round && !sharedBusy){ sharedBusy=true; await initRound(round); sharedBusy=false; }
   sh.sec=sec;
-  if(sec<50){ sh.phase='bet'; }
+  if(sec<BET_SECS){ sh.phase='bet'; }
   else { sh.phase='reveal'; if(!sh.revealed && sh.seed){ doReveal(round); } }
   renderTimer();
   if(tab==='shared') renderShared();
+  if(drawerOpen) renderOnline();
 }
 
 async function doReveal(round){
@@ -484,8 +520,8 @@ async function doReveal(round){
 function renderTimer(){
   const sec=sh.sec||0;
   const ph=document.getElementById('sh_phase');
-  if(sec<50){ ph.textContent='베팅'; ph.className='phasechip bet'; document.getElementById('sh_count').textContent=Math.ceil(50-sec)+'s'; }
-  else { ph.textContent='공개'; ph.className='phasechip reveal'; document.getElementById('sh_count').textContent=Math.ceil(60-sec)+'s'; }
+  if(sec<BET_SECS){ ph.textContent='베팅'; ph.className='phasechip bet'; document.getElementById('sh_count').textContent=Math.ceil(BET_SECS-sec)+'s'; }
+  else { ph.textContent='공개'; ph.className='phasechip reveal'; document.getElementById('sh_count').textContent=Math.ceil(ROUND_SECS-sec)+'s'; }
   document.getElementById('sh_round').textContent='라운드 #'+sh.round;
 }
 function renderShared(){
@@ -499,13 +535,17 @@ function renderShared(){
   document.getElementById('h_tB').textContent=agg.banker?('전체 '+won(agg.banker)):'';
   document.getElementById('h_tT').textContent=agg.tie?('전체 '+won(agg.tie)):'';
   renderRoad('h_road', sh.road);
-  // bet list
-  const rows=Object.values(sh.roundBets).map(b=>{
-    const parts=[]; if(b.player)parts.push('P '+won(b.player)); if(b.banker)parts.push('B '+won(b.banker)); if(b.tie)parts.push('T '+won(b.tie));
+  // 좌측 하단 실시간 베팅 현황 (누가 / 어디에 / 얼마)
+  const rows=Object.entries(sh.roundBets).map(([pid,b])=>{
+    const parts=[];
+    if(b.player)parts.push('PLAYER '+won(b.player));
+    if(b.banker)parts.push('BANKER '+won(b.banker));
+    if(b.tie)parts.push('TIE '+won(b.tie));
     if(!parts.length) return '';
-    return `<div class="bl"><span>${escapeH(b.name)}</span><span>${parts.join(' / ')}</span></div>`;
+    return `<div class="bl"><span class="who">${escapeH(b.name)}${pid===me.id?' (나)':''}</span><span class="amt">${parts.join(' · ')}</span></div>`;
   }).filter(Boolean).join('');
-  document.getElementById('h_betlist').innerHTML = rows ? ('<div style="opacity:.7;margin-bottom:4px;">이번 라운드 베팅</div>'+rows) : '';
+  document.getElementById('h_betlist').innerHTML =
+    '<div class="ttl">🎯 실시간 베팅 현황</div>' + (rows || '<div style="opacity:.55;">아직 베팅 없음</div>');
 }
 function smsg(m){ document.getElementById('h_msg').textContent=m; }
 
@@ -587,7 +627,7 @@ function subscribeRealtime(){
 /* ===================== settle pending (missed rounds) ===================== */
 async function settlePending(){
   try{
-    const cur=Math.floor(srvNow()/60);
+    const cur=Math.floor(srvNow()/ROUND_SECS);
     const {data:bets}=await sb.from('shared_bets').select('round_no,side,amount').eq('player_id',me.id);
     if(!bets||!bets.length) return;
     const {data:setl}=await sb.from('shared_settlements').select('round_no').eq('player_id',me.id);
@@ -604,6 +644,20 @@ async function settlePending(){
     }
     renderMe();
   }catch(e){}
+}
+
+/* ===================== online drawer ===================== */
+function toggleDrawer(){
+  drawerOpen=!drawerOpen;
+  document.getElementById('drawer').classList.toggle('open', drawerOpen);
+  if(drawerOpen){ renderOnline(); }
+}
+function renderOnline(){
+  const list=Object.values(playersCache).filter(isOnline).sort((a,b)=>b.balance-a.balance);
+  document.getElementById('onlineCount').textContent=list.length;
+  document.getElementById('onlineList').innerHTML = list.map(p=>`
+    <div class="online-row"><span class="dot"></span><span class="nm">${escapeH(p.name)}${p.id===me.id?' (나)':''}</span><span class="bal">${won(p.balance)}</span></div>`
+  ).join('') || '<div style="opacity:.6;font-size:13px;">접속 중인 사람이 없습니다.</div>';
 }
 
 function escapeH(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
