@@ -222,7 +222,7 @@
     </div>
     <div class="msg" id="h_msg"></div>
     <div class="betlist" id="h_betlist"></div>
-    <div class="hint">칩을 고르고 박스를 눌러 베팅액을 올린 뒤 <b>배팅</b>으로 확정 · 0~30초 베팅 · 30초 마감 후 <b>딜</b>로 카드 공개(안 누르면 자동 공개). 모두가 같은 카드를 봅니다.</div>
+    <div class="hint">40초 주기(베팅 30초 + 공개 10초) · 칩을 고르고 박스를 눌러 베팅액을 올린 뒤 <b>배팅</b>으로 확정 · 30초 마감 후 <b>딜</b>로 카드 공개(안 누르면 자동 공개). 모두가 같은 카드를 봅니다.</div>
   </div>
 
   <!-- PEOPLE / SPECTATE -->
@@ -247,7 +247,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const RANKS=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
 const SUITS=['♠','♥','♦','♣'];
 const CHIPS=[100,500,1000,5000,10000];
-const ROUND_SECS=60, BET_SECS=30;   // 매 분 라운드, 베팅 30초
+const ROUND_SECS=40, BET_SECS=30;   // 40초 주기: 베팅 30초 + 공개 10초
 const RECHARGE=100000;              // 0원일 때 충전 금액
 
 let me = null;             // {id,name,balance,net,hands}
