@@ -133,6 +133,11 @@
     background:#5b5b5b; color:#fff; padding:9px 16px; border-radius:999px; font-size:13px; font-weight:700;
     box-shadow:0 6px 18px #0008; display:flex; align-items:center; gap:10px; max-width:92vw;}
   .updatebar .btn{padding:5px 12px; font-size:12px;}
+  /* 축하 공지 (중앙 상단, 금색) */
+  .celebratebar{position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:101;
+    background:linear-gradient(90deg,#f5c542,#ff7a45); color:#08130e; padding:11px 20px; border-radius:999px;
+    font-size:14px; font-weight:900; box-shadow:0 8px 22px #0008; max-width:92vw; text-align:center; animation:popcele .4s ease;}
+  @keyframes popcele{from{transform:translateX(-50%) scale(.85); opacity:0;} to{transform:translateX(-50%) scale(1); opacity:1;}}
   .hint{font-size:12px; opacity:.55; margin-top:12px; line-height:1.6; text-align:center;}
 
   /* 우측 드로어 */
@@ -175,6 +180,9 @@
     🔄 새 버전이 있습니다 — 새로고침 한 번 해주세요
     <button class="btn" onclick="location.reload()">새로고침</button>
   </div>
+
+  <!-- 100만원 돌파 축하 공지 -->
+  <div id="celebrateBanner" class="celebratebar" style="display:none;"></div>
 
   <!-- 우측 접속자 드로어 -->
   <div id="drawer" class="drawer">
@@ -289,7 +297,8 @@ const RANKS=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
 const SUITS=['♠','♥','♦','♣'];
 const CHIPS=[100,500,1000,5000,10000];
 let ROUND_SECS=40, BET_SECS=30;     // 서버(get_game_config)에서 받아와 덮어씀
-const APP_VERSION=1;                 // 배포할 때마다 +1, DB game_config.app_version 도 같이 올림
+const APP_VERSION=2;                 // 배포할 때마다 +1, DB game_config.app_version 도 같이 올림
+const MILESTONE=1000000;             // 순손익 이 값 이상이면 축하 공지
 const RECHARGE=100000;              // 충전 금액
 const RECHARGE_BELOW=100;           // 잔액이 이 값 미만일 때만 충전 가능
 
@@ -299,6 +308,8 @@ let timeOffset = 0;        // serverMs - localMs
 let playersCache = {};
 let watching = null;
 let drawerOpen = false;
+let celebrated = new Set();
+let milestoneReady = false;
 
 function won(n){ return Math.round(n).toLocaleString('ko-KR'); }
 function srvNow(){ return (Date.now()+timeOffset)/1000; }      // epoch seconds (server-aligned)
@@ -374,6 +385,8 @@ async function enterApp(){
   await settlePending();
   subscribeRealtime();
   await fetchPlayers();
+  Object.values(playersCache).forEach(p=>{ if(Number(p.net_winnings)>=MILESTONE) celebrated.add(p.id); });
+  milestoneReady=true;
   await fetchChat();
   heartbeat();
   setInterval(heartbeat, 25000);
@@ -747,6 +760,7 @@ function subscribeRealtime(){
   sb.channel('players-ch').on('postgres_changes',{event:'*',schema:'public',table:'players'},payload=>{
     const r=payload.new; if(!r) return;
     playersCache[r.id]=r;
+    checkMilestone(r);
     if(r.id===me.id){ me.balance=Number(r.balance); me.net=Number(r.net_winnings); me.hands=r.hands_played; renderMe(); }
     if(tab==='rank') renderRank();
     if(tab==='people'){ renderPeople(); }
@@ -837,6 +851,19 @@ function renderOnline(){
   ).join('') || '<div style="opacity:.6;font-size:13px;">접속 중인 사람이 없습니다.</div>';
 }
 
+function checkMilestone(p){
+  if(!milestoneReady || !p) return;
+  if(Number(p.net_winnings)>=MILESTONE && !celebrated.has(p.id)){
+    celebrated.add(p.id);
+    celebrate(`🎉 ${escapeH(p.name)}님 순손익 100만원 돌파! 축하합니다 🎉`);
+  }
+}
+function celebrate(msg){
+  const el=document.getElementById('celebrateBanner');
+  el.innerHTML=msg; el.style.display='block';
+  clearTimeout(celebrate._t);
+  celebrate._t=setTimeout(()=>{ el.style.display='none'; }, 7000);
+}
 function truncName(n){ n=String(n); return n.length>5 ? n.slice(0,5)+'…' : n; }
 function escapeH(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
