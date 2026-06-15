@@ -248,7 +248,8 @@ const RANKS=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
 const SUITS=['♠','♥','♦','♣'];
 const CHIPS=[100,500,1000,5000,10000];
 const ROUND_SECS=40, BET_SECS=30;   // 40초 주기: 베팅 30초 + 공개 10초
-const RECHARGE=100000;              // 0원일 때 충전 금액
+const RECHARGE=100000;              // 충전 금액
+const RECHARGE_BELOW=100;           // 잔액이 이 값 미만일 때만 충전 가능
 
 let me = null;             // {id,name,balance,net,hands}
 let tab = 'solo';
@@ -345,12 +346,12 @@ function renderMe(){
   document.getElementById('meBal').textContent=won(me.balance);
   document.getElementById('meStat').textContent=`순손익 ${me.net>=0?'+':''}${won(me.net)} · ${me.hands}판`;
   const rb=document.getElementById('rechargeBtn');
-  rb.disabled = me.balance!==0;          // 0원일 때만 활성화
-  rb.classList.toggle('pulse', me.balance===0);
+  rb.disabled = me.balance>=RECHARGE_BELOW;          // 100원 미만일 때만 활성화
+  rb.classList.toggle('pulse', me.balance<RECHARGE_BELOW);
 }
 async function recharge(){
-  if(me.balance!==0) return;
-  me.balance=RECHARGE; renderMe();
+  if(me.balance>=RECHARGE_BELOW) return;
+  me.balance+=RECHARGE; renderMe();
   try{ await sb.from('players').update({balance:me.balance, last_seen:new Date().toISOString()}).eq('id',me.id); }catch(e){}
 }
 
