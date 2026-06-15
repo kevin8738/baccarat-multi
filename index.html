@@ -99,7 +99,7 @@
   .spec{margin-top:12px;}
   .msg{text-align:center; font-size:13px; min-height:18px; opacity:.9; margin-top:6px;}
   .betlist .bl{display:flex; justify-content:space-between; gap:8px; padding:5px 0; border-bottom:1px solid #ffffff14;}
-  .betlist .bl .who{font-weight:700;} .betlist .bl .amt{color:var(--gold); font-weight:700; white-space:nowrap;}
+  .betlist .bl .who{font-weight:700; white-space:nowrap;} .betlist .bl .amt{color:var(--gold); font-weight:700; white-space:nowrap;}
   .betlist .ttl{opacity:.85; font-weight:800; font-size:12px; margin-bottom:6px;}
   /* 공유 탭 좌측 하단 실시간 베팅 현황 */
   #h_betlist{position:fixed; left:12px; bottom:12px; width:250px; max-height:42vh; overflow:auto;
@@ -128,6 +128,11 @@
   .botrow .bb{color:var(--gold); font-weight:800; min-width:80px; text-align:right;}
   .botrow .bbet{min-width:150px; text-align:right; opacity:.92;}
   .pos{color:#7CFC9A; font-weight:800;} .neg{color:#ff8a80; font-weight:800;}
+  /* 업데이트 공지 (중앙 상단, 회색) */
+  .updatebar{position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:100;
+    background:#5b5b5b; color:#fff; padding:9px 16px; border-radius:999px; font-size:13px; font-weight:700;
+    box-shadow:0 6px 18px #0008; display:flex; align-items:center; gap:10px; max-width:92vw;}
+  .updatebar .btn{padding:5px 12px; font-size:12px;}
   .hint{font-size:12px; opacity:.55; margin-top:12px; line-height:1.6; text-align:center;}
 
   /* 우측 드로어 */
@@ -164,6 +169,12 @@
 
 <!-- APP -->
 <div id="app" style="display:none;">
+
+  <!-- 업데이트 공지 -->
+  <div id="updateBanner" class="updatebar" style="display:none;">
+    🔄 새 버전이 있습니다 — 새로고침 한 번 해주세요
+    <button class="btn" onclick="location.reload()">새로고침</button>
+  </div>
 
   <!-- 우측 접속자 드로어 -->
   <div id="drawer" class="drawer">
@@ -278,6 +289,7 @@ const RANKS=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
 const SUITS=['♠','♥','♦','♣'];
 const CHIPS=[100,500,1000,5000,10000];
 let ROUND_SECS=40, BET_SECS=30;     // 서버(get_game_config)에서 받아와 덮어씀
+const APP_VERSION=1;                 // 배포할 때마다 +1, DB game_config.app_version 도 같이 올림
 const RECHARGE=100000;              // 충전 금액
 const RECHARGE_BELOW=100;           // 잔액이 이 값 미만일 때만 충전 가능
 
@@ -372,7 +384,10 @@ async function enterApp(){
 }
 
 async function syncTime(){ try{ const {data}=await sb.rpc('server_now'); if(data){ timeOffset = data*1000 - Date.now(); } }catch(e){} }
-async function loadConfig(){ try{ const {data}=await sb.rpc('get_game_config'); if(data){ ROUND_SECS=data.round_secs; BET_SECS=data.bet_secs; } }catch(e){} }
+async function loadConfig(){ try{ const {data}=await sb.rpc('get_game_config'); if(data){
+  ROUND_SECS=data.round_secs; BET_SECS=data.bet_secs;
+  if(data.app_version && data.app_version>APP_VERSION){ const b=document.getElementById('updateBanner'); if(b) b.style.display='flex'; }
+} }catch(e){} }
 async function heartbeat(){ try{ await sb.from('players').update({last_seen:new Date().toISOString()}).eq('id',me.id); }catch(e){} }
 
 function renderMe(){
@@ -662,7 +677,7 @@ function renderShared(){
     if(b.banker)parts.push('BANKER '+won(b.banker));
     if(b.tie)parts.push('TIE '+won(b.tie));
     if(!parts.length) return '';
-    return `<div class="bl"><span class="who">${escapeH(b.name)}${pid===me.id?' (나)':''}</span><span class="amt">${parts.join(' · ')}</span></div>`;
+    return `<div class="bl"><span class="who">${escapeH(truncName(b.name))}${pid===me.id?' (나)':''}</span><span class="amt">${parts.join(' · ')}</span></div>`;
   }).filter(Boolean).join('');
   document.getElementById('h_betlist').innerHTML =
     '<div class="ttl">🎯 실시간 베팅 현황</div>' + (rows || '<div style="opacity:.55;">아직 베팅 없음</div>');
@@ -822,6 +837,7 @@ function renderOnline(){
   ).join('') || '<div style="opacity:.6;font-size:13px;">접속 중인 사람이 없습니다.</div>';
 }
 
+function truncName(n){ n=String(n); return n.length>5 ? n.slice(0,5)+'…' : n; }
 function escapeH(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
 /* ===================== boot ===================== */
