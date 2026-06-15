@@ -137,6 +137,7 @@
   .celebratebar{position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:101;
     background:linear-gradient(90deg,#f5c542,#ff7a45); color:#08130e; padding:11px 20px; border-radius:999px;
     font-size:14px; font-weight:900; box-shadow:0 8px 22px #0008; max-width:92vw; text-align:center; animation:popcele .4s ease;}
+  .celebratebar.lose{background:linear-gradient(90deg,#5b8def,#7c3aed); color:#fff;}
   @keyframes popcele{from{transform:translateX(-50%) scale(.85); opacity:0;} to{transform:translateX(-50%) scale(1); opacity:1;}}
   .hint{font-size:12px; opacity:.55; margin-top:12px; line-height:1.6; text-align:center;}
 
@@ -297,8 +298,8 @@ const RANKS=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
 const SUITS=['♠','♥','♦','♣'];
 const CHIPS=[100,500,1000,5000,10000];
 let ROUND_SECS=40, BET_SECS=30;     // 서버(get_game_config)에서 받아와 덮어씀
-const APP_VERSION=3;                 // 배포할 때마다 +1, DB game_config.app_version 도 같이 올림
-const MILESTONE=1000000;             // 순손익 이 값 이상이면 축하 공지
+const APP_VERSION=4;                 // 배포할 때마다 +1, DB game_config.app_version 도 같이 올림
+const MILESTONE=1000000;             // 한 판 손익이 +이 값↑ 또는 -이 값↓이면 공지
 const RECHARGE=100000;              // 충전 금액
 const RECHARGE_BELOW=100;           // 잔액이 이 값 미만일 때만 충전 가능
 
@@ -308,7 +309,7 @@ let timeOffset = 0;        // serverMs - localMs
 let playersCache = {};
 let watching = null;
 let drawerOpen = false;
-let celebrated = new Set();
+let lastNet = new Map();   // pid -> 직전 순손익 (한 판 변화량 감지용)
 let milestoneReady = false;
 
 function won(n){ return Math.round(n).toLocaleString('ko-KR'); }
@@ -385,7 +386,7 @@ async function enterApp(){
   await settlePending();
   subscribeRealtime();
   await fetchPlayers();
-  Object.values(playersCache).forEach(p=>{ if(Number(p.net_winnings)>=MILESTONE) celebrated.add(p.id); });
+  Object.values(playersCache).forEach(p=>lastNet.set(p.id, Number(p.net_winnings)));
   milestoneReady=true;
   await fetchChat();
   heartbeat();
@@ -862,15 +863,18 @@ function renderOnline(){
 }
 
 function checkMilestone(p){
-  if(!milestoneReady || !p) return;
-  if(Number(p.net_winnings)>=MILESTONE && !celebrated.has(p.id)){
-    celebrated.add(p.id);
-    celebrate(`🎉 ${escapeH(p.name)}님 순손익 100만원 돌파! 축하합니다 🎉`);
-  }
+  if(!p) return;
+  const cur=Number(p.net_winnings);
+  const prev=lastNet.has(p.id)?lastNet.get(p.id):cur;
+  lastNet.set(p.id, cur);
+  if(!milestoneReady) return;
+  const delta=cur-prev;                                  // 이번 판 손익
+  if(delta>=MILESTONE) celebrate(`🎉 ${escapeH(p.name)}님 한 판에 +${won(delta)} 대박! 축하합니다 🎉`,'win');
+  else if(delta<=-MILESTONE) celebrate(`😢 ${escapeH(p.name)}님 한 판에 ${won(delta)} … 다음엔 잘될 거예요 😢`,'lose');
 }
-function celebrate(msg){
+function celebrate(msg,type){
   const el=document.getElementById('celebrateBanner');
-  el.innerHTML=msg; el.style.display='block';
+  el.innerHTML=msg; el.className='celebratebar '+(type==='lose'?'lose':'win'); el.style.display='block';
   clearTimeout(celebrate._t);
   celebrate._t=setTimeout(()=>{ el.style.display='none'; }, 7000);
 }
