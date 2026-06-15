@@ -229,7 +229,6 @@
     <div class="actions">
       <button class="btn ghost" id="h_clear" onclick="sharedClearStage()" disabled>베팅 취소</button>
       <button class="btn" id="h_bet" onclick="sharedBetConfirm()" disabled>배팅</button>
-      <button class="btn" id="h_deal" onclick="sharedDeal()" disabled>딜</button>
     </div>
     <div class="msg" id="h_msg"></div>
     <div class="betlist" id="h_betlist"></div>
@@ -241,7 +240,7 @@
         <button class="btn" onclick="sendChat()">전송</button>
       </div>
     </div>
-    <div class="hint">40초 주기(베팅 30초 + 공개 10초) · 칩을 고르고 박스를 눌러 베팅액을 올린 뒤 <b>배팅</b>으로 확정 · 30초 마감 후 <b>딜</b>로 카드 공개(안 누르면 자동 공개). 모두가 같은 카드를 봅니다.</div>
+    <div class="hint">40초 주기(베팅 30초 + 공개 10초) · 칩을 고르고 박스를 눌러 베팅액을 올린 뒤 <b>배팅</b>으로 확정 · 30초 마감 시 카드 자동 공개. 모두가 같은 카드를 봅니다.</div>
   </div>
 
   <!-- PEOPLE / SPECTATE -->
@@ -369,11 +368,18 @@ function renderMe(){
   document.getElementById('meBal').textContent=won(me.balance);
   document.getElementById('meStat').textContent=`순손익 ${me.net>=0?'+':''}${won(me.net)} · ${me.hands}판`;
   const rb=document.getElementById('rechargeBtn');
-  rb.disabled = me.balance>=RECHARGE_BELOW;          // 100원 미만일 때만 활성화
-  rb.classList.toggle('pulse', me.balance<RECHARGE_BELOW);
+  const eff=me.balance+inPlayChips();                // 잔액 + 현재 베팅된(미정산) 금액
+  rb.disabled = eff>=RECHARGE_BELOW;                 // 합쳐서 100원 미만일 때만 활성화
+  rb.classList.toggle('pulse', eff<RECHARGE_BELOW);
+}
+function inPlayChips(){
+  const solo=(soloBets.player||0)+(soloBets.banker||0)+(soloBets.tie||0);
+  const m=myShared();
+  const shared=sh.settled?0:((m.player||0)+(m.banker||0)+(m.tie||0));  // 정산 전 공유 베팅
+  return solo+shared;
 }
 async function recharge(){
-  if(me.balance>=RECHARGE_BELOW) return;
+  if(me.balance+inPlayChips()>=RECHARGE_BELOW) return;
   me.balance+=RECHARGE; renderMe();
   try{ await sb.from('players').update({balance:me.balance, last_seen:new Date().toISOString()}).eq('id',me.id); }catch(e){}
 }
@@ -521,31 +527,18 @@ async function sharedLoop(){
   else {
     sh.phase='reveal';
     if(sh.staged.player||sh.staged.banker||sh.staged.tie) sh.staged={player:0,banker:0,tie:0};
-    if(!sh.revealed && sh.seed){ doSettle(round); }
-    if(sh.revealed && !sh.shown && sec>=BET_SECS+3){ showReveal(); }  // 딜 안 누르면 3초 후 자동 공개
+    if(!sh.revealed && sh.seed){ revealRound(round); }   // 마감 즉시 자동 공개
   }
   renderTimer();
   if(tab==='shared') renderShared();
   if(drawerOpen) renderOnline();
 }
 
-async function doSettle(round){
-  sh.revealed=true;
-  sh.hand=dealFromSeed(sh.seed);
-  sh.road.push(sh.hand.result==='player'?'P':sh.hand.result==='banker'?'B':'T');
-  if(!sh.settled){
-    sh.settled=true;
-    const ret=payout(sh.hand.result, myShared());
-    try{ const {data}=await sb.rpc('settle_shared',{p_round:round,p_player:me.id,p_returns:ret});
-      if(data){ me.balance=Number(data.balance); me.net=Number(data.net_winnings); me.hands=data.hands_played; renderMe(); } }catch(e){}
-  }
-  banner('h_result','카드 공개 — 딜을 누르세요');
-  if(tab==='shared') renderShared();
-}
-function showReveal(){
-  if(sh.shown || !sh.hand) return;
-  sh.shown=true;
-  const h=sh.hand;
+async function revealRound(round){
+  sh.revealed=true; sh.shown=true;
+  const h=sh.hand=dealFromSeed(sh.seed);
+  sh.road.push(h.result==='player'?'P':h.result==='banker'?'B':'T');
+  // 카드 자동 공개
   rp('h',h,2,2);
   setTimeout(()=>rp('h',h,h.player.length,h.banker.length), 600);
   const mine=myShared();
@@ -553,9 +546,16 @@ function showReveal(){
   const net=payout(h.result,mine)-staked;
   const names={player:'PLAYER 승',banker:'BANKER 승',tie:'TIE'};
   flash('h_result', `${names[h.result]}${staked>0?' · '+(net>=0?'+':'')+won(net):''}`, net>0||(net===0&&staked===0));
+  // 정산(라운드당 멱등)
+  if(!sh.settled){
+    sh.settled=true;
+    const ret=payout(h.result, mine);
+    try{ const {data}=await sb.rpc('settle_shared',{p_round:round,p_player:me.id,p_returns:ret});
+      if(data){ me.balance=Number(data.balance); me.net=Number(data.net_winnings); me.hands=data.hands_played; } }catch(e){}
+  }
+  renderMe();
   if(tab==='shared') renderShared();
 }
-function sharedDeal(){ if(sh.phase==='reveal' && sh.revealed && !sh.shown) showReveal(); }
 
 /* 베팅 스테이징 + 확정 */
 function sharedStage(side){
@@ -611,7 +611,6 @@ function renderShared(){
   const betPhase=sh.phase==='bet';
   document.getElementById('h_bet').disabled = !betPhase || stagedTotal===0;
   document.getElementById('h_clear').disabled = !betPhase || stagedTotal===0;
-  document.getElementById('h_deal').disabled = !(sh.phase==='reveal' && sh.revealed && !sh.shown);
   renderRoad('h_road', sh.road);
   // 좌측 하단 실시간 베팅 현황 (누가 / 어디에 / 얼마)
   const rows=Object.entries(sh.roundBets).map(([pid,b])=>{
