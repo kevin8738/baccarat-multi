@@ -247,7 +247,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const RANKS=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
 const SUITS=['♠','♥','♦','♣'];
 const CHIPS=[100,500,1000,5000,10000];
-const ROUND_SECS=40, BET_SECS=30;   // 40초 주기: 베팅 30초 + 공개 10초
+let ROUND_SECS=40, BET_SECS=30;     // 서버(get_game_config)에서 받아와 덮어씀
 const RECHARGE=100000;              // 충전 금액
 const RECHARGE_BELOW=100;           // 잔액이 이 값 미만일 때만 충전 가능
 
@@ -327,18 +327,20 @@ async function enterApp(){
   document.getElementById('login').style.display='none';
   document.getElementById('app').style.display='block';
   await syncTime();
+  await loadConfig();
   renderMe(); renderChips();
   await settlePending();
   subscribeRealtime();
   await fetchPlayers();
   heartbeat();
   setInterval(heartbeat, 25000);
-  setInterval(syncTime, 120000);
+  setInterval(()=>{ syncTime(); loadConfig(); }, 120000);
   setInterval(sharedLoop, 250);
   sharedLoop();
 }
 
 async function syncTime(){ try{ const {data}=await sb.rpc('server_now'); if(data){ timeOffset = data*1000 - Date.now(); } }catch(e){} }
+async function loadConfig(){ try{ const {data}=await sb.rpc('get_game_config'); if(data){ ROUND_SECS=data.round_secs; BET_SECS=data.bet_secs; } }catch(e){} }
 async function heartbeat(){ try{ await sb.from('players').update({last_seen:new Date().toISOString()}).eq('id',me.id); }catch(e){} }
 
 function renderMe(){
