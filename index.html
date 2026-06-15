@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>바카라 멀티</title>
+<style>
+  :root{ --felt:#0b6e4f; --felt2:#0a5a41; --gold:#f5c542; --player:#2f6df0; --banker:#e5484d; --tie:#30a46c; }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Segoe UI",sans-serif;
+    background:radial-gradient(circle at 50% 0%, #14352a, #06120d 70%); color:#eaf6f0; min-height:100vh;
+    padding:12px; -webkit-tap-highlight-color:transparent;}
+  h1{font-size:19px; margin:0;}
+  .btn{border:none; border-radius:12px; padding:10px 14px; font-size:14px; font-weight:700; cursor:pointer;
+    color:#08130e; background:var(--gold); transition:transform .05s, filter .15s;}
+  .btn:hover{filter:brightness(1.08);} .btn:active{transform:translateY(1px);}
+  .btn:disabled{opacity:.3; cursor:not-allowed; filter:none;}
+  .btn.ghost{background:#ffffff1a; color:#eaf6f0; border:1px solid #ffffff33;}
+  input{padding:11px 12px; border-radius:10px; border:1px solid #ffffff33; background:#06231a; color:#eaf6f0; font-size:15px; font-weight:600;}
+
+  /* login */
+  .login{max-width:380px; margin:8vh auto; background:linear-gradient(180deg,#10493a,#0b3328);
+    border:1px solid #ffffff1f; border-radius:18px; padding:26px; box-shadow:0 8px 30px #0008;}
+  .login h1{margin-bottom:4px;} .login p{opacity:.7; font-size:13px; margin:0 0 18px;}
+  .login label{display:block; font-size:12px; opacity:.8; margin:12px 0 5px;}
+  .login input{width:100%;} .login .btn{width:100%; margin-top:18px; padding:13px;}
+
+  /* header + tabs */
+  .hdr{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;
+    background:linear-gradient(180deg,var(--felt),var(--felt2)); border:1px solid #ffffff22; border-radius:14px;
+    padding:12px 16px; margin-bottom:10px; box-shadow:0 8px 30px #0008;}
+  .hdr .me{font-weight:800;} .hdr .bal{color:var(--gold); font-weight:900; font-size:20px;}
+  .tabs{display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap;}
+  .tab{flex:1; min-width:70px; text-align:center; padding:11px 8px; border-radius:12px; cursor:pointer;
+    background:#ffffff12; border:1px solid #ffffff22; font-weight:800; font-size:14px;}
+  .tab.active{background:var(--gold); color:#08130e;}
+  .page{display:none;} .page.active{display:block;}
+
+  /* table */
+  .table{background:radial-gradient(circle at 50% 20%, #0e7a57, #094b37 75%); border:1px solid #ffffff22;
+    border-radius:18px; padding:16px; box-shadow:0 8px 30px #0008; margin-bottom:12px;}
+  .hands{display:grid; grid-template-columns:1fr auto 1fr; gap:12px; align-items:center;}
+  @media(max-width:560px){.hands{grid-template-columns:1fr;}}
+  .hand{background:#ffffff10; border:1px solid #ffffff22; border-radius:14px; padding:12px; min-height:120px;}
+  .hand.P{border-top:4px solid var(--player);} .hand.B{border-top:4px solid var(--banker);}
+  .hand .htitle{display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;}
+  .hand .hname{font-size:14px; font-weight:800;} .hand .htot{font-size:24px; font-weight:900; color:var(--gold);}
+  .cards{display:flex; gap:7px; flex-wrap:wrap; min-height:74px;}
+  .card{width:50px; height:72px; border-radius:8px; background:#fff; color:#111; display:flex; flex-direction:column;
+    justify-content:space-between; padding:5px; font-weight:800; box-shadow:0 3px 8px #0006; animation:flip .25s ease;}
+  @keyframes flip{from{transform:rotateY(90deg);opacity:0;} to{transform:rotateY(0);opacity:1;}}
+  .card.red{color:#d11;} .card .r{font-size:15px;} .card .s{font-size:18px; text-align:right;}
+  .vs{font-size:13px; font-weight:800; opacity:.7; text-align:center;}
+  .resultbanner{text-align:center; font-size:17px; font-weight:900; min-height:24px; margin-top:10px;}
+  .win{color:var(--gold);} .lose{color:#ff8a80;}
+
+  .timerbar{display:flex; justify-content:center; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap;}
+  .phasechip{font-size:13px; font-weight:900; padding:5px 12px; border-radius:999px;}
+  .phasechip.bet{background:var(--tie); color:#fff;} .phasechip.reveal{background:var(--banker); color:#fff;}
+  .countdown{font-size:30px; font-weight:900; font-variant-numeric:tabular-nums; color:var(--gold);}
+
+  .bets{display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:10px;}
+  .betbox{border-radius:14px; padding:12px 8px; text-align:center; cursor:pointer; border:2px solid #ffffff33;
+    background:#ffffff10; transition:.12s; user-select:none;}
+  .betbox:hover{background:#ffffff1c;}
+  .betbox.P{border-color:var(--player);} .betbox.B{border-color:var(--banker);} .betbox.T{border-color:var(--tie);}
+  .betbox .bt{font-size:14px; font-weight:900;} .betbox .bp{font-size:11px; opacity:.75;}
+  .betbox .ba{font-size:18px; font-weight:900; color:var(--gold); margin-top:5px; min-height:22px;}
+  .betbox .all{font-size:11px; opacity:.8; margin-top:2px; min-height:15px;}
+  .betbox.winflash{animation:flash .6s ease 2;}
+  @keyframes flash{50%{background:var(--gold); color:#08130e;}}
+
+  .chiprack{display:flex; gap:7px; flex-wrap:wrap; justify-content:center; margin-bottom:8px;}
+  .chip{width:54px; height:54px; border-radius:50%; border:3px dashed #ffffff88; cursor:pointer; display:flex;
+    align-items:center; justify-content:center; font-weight:900; font-size:12px; color:#fff; background:#444;}
+  .chip.c100{background:#6b7280;} .chip.c500{background:#2f6df0;} .chip.c1000{background:#d11;}
+  .chip.c5000{background:#7c3aed;} .chip.c10000{background:#111; border-color:var(--gold); color:var(--gold);}
+  .chip.sel{outline:4px solid var(--gold); transform:translateY(-3px);}
+  .actions{display:flex; gap:8px; flex-wrap:wrap; justify-content:center;}
+
+  .road{display:flex; gap:4px; flex-wrap:wrap; margin-top:12px; min-height:22px;}
+  .bead{width:20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:900; color:#fff;}
+  .bead.P{background:var(--player);} .bead.B{background:var(--banker);} .bead.T{background:var(--tie);}
+
+  .list{display:flex; flex-direction:column; gap:8px;}
+  .row{display:flex; align-items:center; gap:10px; background:#ffffff10; border:1px solid #ffffff22;
+    border-radius:12px; padding:11px 14px;}
+  .row .rank{width:26px; font-weight:900; color:var(--gold); text-align:center;}
+  .row .nm{font-weight:800; flex:1;}
+  .row .sub{font-size:12px; opacity:.7;}
+  .row .bal{font-weight:900; color:var(--gold);}
+  .dot{width:9px; height:9px; border-radius:50%; background:#3a3;}
+  .dot.off{background:#666;}
+  .row.clickable{cursor:pointer;} .row.clickable:hover{background:#ffffff1c;}
+  .row.sel{outline:2px solid var(--gold);}
+  .spec{margin-top:12px;}
+  .msg{text-align:center; font-size:13px; min-height:18px; opacity:.9; margin-top:6px;}
+  .betlist{margin-top:10px; font-size:13px;}
+  .betlist .bl{display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid #ffffff14;}
+  .hint{font-size:12px; opacity:.55; margin-top:12px; line-height:1.6; text-align:center;}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login" class="login">
+  <h1>🎴 바카라 멀티</h1>
+  <p>이름과 생년월일로 입장하세요.</p>
+  <label>이름</label>
+  <input id="inName" placeholder="홍길동" maxlength="20">
+  <label>생년월일</label>
+  <input id="inBirth" type="date">
+  <button class="btn" onclick="doLogin()">입장</button>
+  <div class="msg" id="loginMsg"></div>
+</div>
+
+<!-- APP -->
+<div id="app" style="display:none;">
+  <div class="hdr">
+    <div><h1>🎴 바카라 멀티</h1><div class="me" id="meName">-</div></div>
+    <div style="text-align:right;">
+      <div class="bal" id="meBal">0</div>
+      <div style="font-size:11px;opacity:.7;" id="meStat">-</div>
+    </div>
+    <button class="btn ghost" onclick="logout()">로그아웃</button>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="solo"   onclick="showTab('solo')">솔로</div>
+    <div class="tab"        data-tab="shared" onclick="showTab('shared')">공유</div>
+    <div class="tab"        data-tab="people" onclick="showTab('people')">관전</div>
+    <div class="tab"        data-tab="rank"   onclick="showTab('rank')">랭킹</div>
+  </div>
+
+  <!-- SOLO -->
+  <div class="page active" id="page-solo">
+    <div class="table">
+      <div class="hands">
+        <div class="hand P"><div class="htitle"><span class="hname" style="color:var(--player)">PLAYER</span><span class="htot" id="s_ptot">-</span></div><div class="cards" id="s_pcards"></div></div>
+        <div class="vs">VS</div>
+        <div class="hand B"><div class="htitle"><span class="hname" style="color:var(--banker)">BANKER</span><span class="htot" id="s_btot">-</span></div><div class="cards" id="s_bcards"></div></div>
+      </div>
+      <div class="resultbanner" id="s_result">베팅 후 딜 하세요</div>
+      <div class="road" id="s_road"></div>
+    </div>
+    <div class="bets">
+      <div class="betbox P" onclick="soloBet('player')"><div class="bt" style="color:var(--player)">PLAYER</div><div class="bp">1:1</div><div class="ba" id="s_aP">&nbsp;</div></div>
+      <div class="betbox T" onclick="soloBet('tie')"><div class="bt" style="color:var(--tie)">TIE</div><div class="bp">8:1</div><div class="ba" id="s_aT">&nbsp;</div></div>
+      <div class="betbox B" onclick="soloBet('banker')"><div class="bt" style="color:var(--banker)">BANKER</div><div class="bp">0.95:1</div><div class="ba" id="s_aB">&nbsp;</div></div>
+    </div>
+    <div class="chiprack" id="s_chips"></div>
+    <div class="actions">
+      <button class="btn ghost" id="s_clear" onclick="soloClear()">베팅 취소</button>
+      <button class="btn" id="s_deal" onclick="soloDeal()">딜</button>
+    </div>
+    <div class="hint">솔로 잔액은 공유 테이블과 같이 쓰며 랭킹에 반영됩니다. 다른 사람이 관전 탭에서 볼 수 있어요.</div>
+  </div>
+
+  <!-- SHARED -->
+  <div class="page" id="page-shared">
+    <div class="timerbar">
+      <span class="phasechip bet" id="sh_phase">베팅</span>
+      <span class="countdown" id="sh_count">--</span>
+      <span style="font-size:12px;opacity:.7;" id="sh_round"></span>
+    </div>
+    <div class="table">
+      <div class="hands">
+        <div class="hand P"><div class="htitle"><span class="hname" style="color:var(--player)">PLAYER</span><span class="htot" id="h_ptot">-</span></div><div class="cards" id="h_pcards"></div></div>
+        <div class="vs">VS</div>
+        <div class="hand B"><div class="htitle"><span class="hname" style="color:var(--banker)">BANKER</span><span class="htot" id="h_btot">-</span></div><div class="cards" id="h_bcards"></div></div>
+      </div>
+      <div class="resultbanner" id="h_result">베팅하세요</div>
+      <div class="road" id="h_road"></div>
+    </div>
+    <div class="bets">
+      <div class="betbox P" onclick="sharedBet('player')"><div class="bt" style="color:var(--player)">PLAYER</div><div class="ba" id="h_aP">&nbsp;</div><div class="all" id="h_tP"></div></div>
+      <div class="betbox T" onclick="sharedBet('tie')"><div class="bt" style="color:var(--tie)">TIE</div><div class="ba" id="h_aT">&nbsp;</div><div class="all" id="h_tT"></div></div>
+      <div class="betbox B" onclick="sharedBet('banker')"><div class="bt" style="color:var(--banker)">BANKER</div><div class="ba" id="h_aB">&nbsp;</div><div class="all" id="h_tB"></div></div>
+    </div>
+    <div class="chiprack" id="h_chips"></div>
+    <div class="msg" id="h_msg"></div>
+    <div class="betlist" id="h_betlist"></div>
+    <div class="hint">매 분 0초에 새 라운드 시작 · 0~50초 베팅 가능 · 50초에 카드 공개. 모두가 같은 카드를 봅니다.</div>
+  </div>
+
+  <!-- PEOPLE / SPECTATE -->
+  <div class="page" id="page-people">
+    <div class="list" id="peopleList"></div>
+    <div class="spec" id="spectate"></div>
+  </div>
+
+  <!-- RANKING -->
+  <div class="page" id="page-rank">
+    <div class="list" id="rankList"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ===================== config ===================== */
+const SUPABASE_URL = 'https://sdiuyqzefzvpmpazkwzh.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_BeZuHCEqCMa_veXZTpEBpA_7IGWXdec';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const RANKS=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+const SUITS=['♠','♥','♦','♣'];
+const CHIPS=[100,500,1000,5000,10000];
+
+let me = null;             // {id,name,balance,net,hands}
+let tab = 'solo';
+let timeOffset = 0;        // serverMs - localMs
+let playersCache = {};
+let watching = null;
+
+function won(n){ return Math.round(n).toLocaleString('ko-KR'); }
+function srvNow(){ return (Date.now()+timeOffset)/1000; }      // epoch seconds (server-aligned)
+function cardValue(r){ if(r==='A')return 1; if(['10','J','Q','K'].includes(r))return 0; return parseInt(r); }
+function handValue(c){ return c.reduce((s,x)=>s+x.value,0)%10; }
+function renderHand(id,cards){ document.getElementById(id).innerHTML = cards.map(c=>`<div class="card ${c.red?'red':''}"><div class="r">${c.rank}</div><div class="s">${c.suit}</div></div>`).join(''); }
+
+/* ===================== card engine ===================== */
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+function rngFromSeed(seed){ let h=2166136261>>>0; for(let i=0;i<seed.length;i++){ h^=seed.charCodeAt(i); h=Math.imul(h,16777619); } return mulberry32(h>>>0); }
+function buildShoe(rnd){
+  const shoe=[];
+  for(let d=0;d<8;d++) for(const s of SUITS) for(const r of RANKS) shoe.push({rank:r,suit:s,value:cardValue(r),red:(s==='♥'||s==='♦')});
+  for(let i=shoe.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); [shoe[i],shoe[j]]=[shoe[j],shoe[i]]; }
+  return shoe;
+}
+function playHand(draw){
+  const player=[draw(),draw()], banker=[draw(),draw()];
+  let pv=handValue(player), bv=handValue(banker);
+  if(pv<8 && bv<8){
+    let p3=null;
+    if(pv<=5){ p3=draw(); player.push(p3); }
+    const bv0=bv; let bDraw=false;
+    if(p3===null){ bDraw=bv0<=5; }
+    else{ const t=p3.value;
+      if(bv0<=2)bDraw=true; else if(bv0===3)bDraw=t!==8; else if(bv0===4)bDraw=(t>=2&&t<=7);
+      else if(bv0===5)bDraw=(t>=4&&t<=7); else if(bv0===6)bDraw=(t>=6&&t<=7); else bDraw=false; }
+    if(bDraw) banker.push(draw());
+  }
+  pv=handValue(player); bv=handValue(banker);
+  const result = pv>bv?'player':(bv>pv?'banker':'tie');
+  return {player,banker,pv,bv,result};
+}
+function dealRandom(){ const rnd=Math.random; const shoe=[]; for(let d=0;d<8;d++) for(const s of SUITS) for(const r of RANKS) shoe.push({rank:r,suit:s,value:cardValue(r),red:(s==='♥'||s==='♦')}); for(let i=shoe.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[shoe[i],shoe[j]]=[shoe[j],shoe[i]];} let i=0; return playHand(()=>shoe[i++]); }
+function dealFromSeed(seed){ const shoe=buildShoe(rngFromSeed(seed)); let i=0; return playHand(()=>shoe[i++]); }
+function payout(result, bets){
+  let r=0;
+  if(result==='player') r+=(bets.player||0)*2;
+  else if(result==='banker') r+=Math.floor((bets.banker||0)*1.95);
+  else { r+=(bets.tie||0)*9 + (bets.player||0) + (bets.banker||0); }
+  return Math.floor(r);
+}
+
+/* ===================== auth ===================== */
+async function doLogin(){
+  const name=document.getElementById('inName').value.trim();
+  const birth=document.getElementById('inBirth').value;
+  if(!name || !birth){ document.getElementById('loginMsg').textContent='이름과 생년월일을 입력하세요.'; return; }
+  const {data,error}=await sb.rpc('login_player',{p_name:name, p_birth:birth});
+  if(error){ document.getElementById('loginMsg').textContent='오류: '+error.message; return; }
+  me={id:data.id,name:data.name,balance:Number(data.balance),net:Number(data.net_winnings),hands:data.hands_played};
+  localStorage.setItem('bm_id', me.id);
+  await enterApp();
+}
+function logout(){ localStorage.removeItem('bm_id'); location.reload(); }
+
+async function tryAutoLogin(){
+  const id=localStorage.getItem('bm_id');
+  if(!id) return false;
+  const {data,error}=await sb.from('players').select('*').eq('id',id).maybeSingle();
+  if(error||!data){ localStorage.removeItem('bm_id'); return false; }
+  me={id:data.id,name:data.name,balance:Number(data.balance),net:Number(data.net_winnings),hands:data.hands_played};
+  await enterApp();
+  return true;
+}
+
+async function enterApp(){
+  document.getElementById('login').style.display='none';
+  document.getElementById('app').style.display='block';
+  await syncTime();
+  renderMe(); renderChips();
+  await settlePending();
+  subscribeRealtime();
+  await fetchPlayers();
+  heartbeat();
+  setInterval(heartbeat, 25000);
+  setInterval(syncTime, 120000);
+  setInterval(sharedLoop, 250);
+  sharedLoop();
+}
+
+async function syncTime(){ try{ const {data}=await sb.rpc('server_now'); if(data){ timeOffset = data*1000 - Date.now(); } }catch(e){} }
+async function heartbeat(){ try{ await sb.from('players').update({last_seen:new Date().toISOString()}).eq('id',me.id); }catch(e){} }
+
+function renderMe(){
+  document.getElementById('meName').textContent=me.name;
+  document.getElementById('meBal').textContent=won(me.balance);
+  document.getElementById('meStat').textContent=`순손익 ${me.net>=0?'+':''}${won(me.net)} · ${me.hands}판`;
+}
+
+/* ===================== tabs ===================== */
+function showTab(t){
+  tab=t;
+  document.querySelectorAll('.tab').forEach(e=>e.classList.toggle('active', e.dataset.tab===t));
+  document.querySelectorAll('.page').forEach(e=>e.classList.remove('active'));
+  document.getElementById('page-'+t).classList.add('active');
+  if(t==='people'){ fetchPlayers().then(renderPeople); }
+  if(t==='rank'){ fetchPlayers().then(renderRank); }
+  if(t==='shared'){ renderShared(); }
+}
+
+/* ===================== chips ===================== */
+let selectedChip=1000;
+function renderChips(){
+  const html=CHIPS.map(v=>`<div class="chip c${v} ${v===selectedChip?'sel':''}" onclick="selChip(${v})">${v>=1000?(v/1000)+'K':v}</div>`).join('');
+  document.getElementById('s_chips').innerHTML=html;
+  document.getElementById('h_chips').innerHTML=html;
+}
+function selChip(v){ selectedChip=v; renderChips(); }
+
+/* ===================== SOLO ===================== */
+let soloBets={player:0,banker:0,tie:0}, soloRoad=[], soloDealing=false, soloOver=false;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+function soloClearTable(){
+  renderHand('s_pcards',[]); renderHand('s_bcards',[]);
+  document.getElementById('s_ptot').textContent='-'; document.getElementById('s_btot').textContent='-';
+  const el=document.getElementById('s_result'); el.textContent='베팅 후 딜 하세요'; el.className='resultbanner';
+}
+function soloBet(box){
+  if(soloDealing) return;
+  if(soloOver){ soloClearTable(); soloOver=false; }
+  if(selectedChip>me.balance){ flash('s_result','잔액이 부족합니다.',false); return; }
+  me.balance-=selectedChip; soloBets[box]+=selectedChip;
+  renderMe(); renderSoloBoxes();
+  persistSolo({phase:'betting'});
+}
+function soloClear(){
+  if(soloDealing) return;
+  if(soloOver){ soloClearTable(); soloOver=false; }
+  me.balance+=soloBets.player+soloBets.banker+soloBets.tie; soloBets={player:0,banker:0,tie:0};
+  renderMe(); renderSoloBoxes(); persistSolo({phase:'betting'});
+}
+async function soloDeal(){
+  if(soloDealing) return;
+  const total=soloBets.player+soloBets.banker+soloBets.tie;
+  if(total===0){ flash('s_result','먼저 베팅하세요.',false); return; }
+  soloDealing=true; soloOver=false; soloClearTable(); renderSoloBoxes();
+  document.getElementById('s_deal').disabled=true; document.getElementById('s_clear').disabled=true;
+  const h=dealRandom();
+  banner('s_result','딜링…'); await sleep(250);
+  rp('s',h,1,0); await sleep(380); rp('s',h,1,1); await sleep(380);
+  rp('s',h,2,1); await sleep(450); rp('s',h,2,2); await sleep(650);
+  const pv2=handValue(h.player.slice(0,2)), bv2=handValue(h.banker.slice(0,2));
+  if(pv2>=8||bv2>=8){ banner('s_result','내추럴! ✨'); await sleep(700); }
+  else{
+    if(h.player.length>2){ banner('s_result','플레이어 한 장 더…'); await sleep(750); rp('s',h,3,2); await sleep(550); }
+    else { banner('s_result','플레이어 스테이'); await sleep(500); }
+    if(h.banker.length>2){ banner('s_result','뱅커 한 장 더…'); await sleep(750); rp('s',h,h.player.length,3); await sleep(550); }
+  }
+  rp('s',h,h.player.length,h.banker.length); await sleep(300);
+  // settle
+  const ret=payout(h.result, soloBets);
+  const staked=soloBets.player+soloBets.banker+soloBets.tie;
+  const net=ret-staked;
+  me.balance+=ret; me.net+=net; me.hands+=1;
+  soloRoad.push(h.result==='player'?'P':h.result==='banker'?'B':'T');
+  const names={player:'PLAYER 승',banker:'BANKER 승',tie:'TIE'};
+  flash('s_result',`${names[h.result]} · ${net>=0?'+':''}${won(net)}`, net>0||(net===0&&h.result==='tie'));
+  flashBox('s', h.result);
+  renderRoad('s_road', soloRoad);
+  const saved={...soloBets};
+  soloBets={player:0,banker:0,tie:0}; soloDealing=false; soloOver=true;
+  renderMe(); renderSoloBoxes();
+  document.getElementById('s_deal').disabled=false; document.getElementById('s_clear').disabled=false;
+  await persistSolo({phase:'result', h, result:h.result, net, bets:saved}, true);
+}
+function renderSoloBoxes(){
+  document.getElementById('s_aP').innerHTML=soloBets.player?won(soloBets.player):'&nbsp;';
+  document.getElementById('s_aB').innerHTML=soloBets.banker?won(soloBets.banker):'&nbsp;';
+  document.getElementById('s_aT').innerHTML=soloBets.tie?won(soloBets.tie):'&nbsp;';
+  document.getElementById('s_deal').disabled=(soloBets.player+soloBets.banker+soloBets.tie)===0||soloDealing;
+}
+async function persistSolo(extra, stats){
+  const live={mode:'solo', ...extra, balance:me.balance, ts:Date.now()};
+  const patch={balance:me.balance, last_seen:new Date().toISOString(), live_state:live};
+  if(stats){ patch.net_winnings=me.net; patch.hands_played=me.hands; }
+  try{ await sb.from('players').update(patch).eq('id',me.id); }catch(e){}
+}
+
+/* shared render helpers (rp = render partial) */
+function rp(pfx,h,np,nb){
+  renderHand(pfx+'_pcards', h.player.slice(0,np));
+  renderHand(pfx+'_bcards', h.banker.slice(0,nb));
+  document.getElementById(pfx+'_ptot').textContent = np?handValue(h.player.slice(0,np)):'-';
+  document.getElementById(pfx+'_btot').textContent = nb?handValue(h.banker.slice(0,nb)):'-';
+}
+function banner(id,msg){ const el=document.getElementById(id); el.className='resultbanner'; el.textContent=msg; }
+function flash(id,msg,win){ const el=document.getElementById(id); el.textContent=msg; el.className='resultbanner '+(win?'win':'lose'); }
+function flashBox(pfx,result){ const m={player:pfx+'_boxP'}; /* shared boxes flash optional */ }
+function renderRoad(id,arr){ document.getElementById(id).innerHTML=arr.slice(-40).map(r=>`<div class="bead ${r}">${r}</div>`).join(''); }
+
+/* ===================== SHARED ===================== */
+let sh={round:-1, seed:null, phase:'bet', revealed:false, settled:false, hand:null, roundBets:{}, road:[]};
+let sharedBusy=false;
+
+async function initRound(round){
+  sh.round=round; sh.seed=null; sh.revealed=false; sh.settled=false; sh.hand=null; sh.roundBets={};
+  renderHand('h_pcards',[]); renderHand('h_bcards',[]);
+  document.getElementById('h_ptot').textContent='-'; document.getElementById('h_btot').textContent='-';
+  banner('h_result','베팅하세요');
+  try{
+    const {data:seed}=await sb.rpc('get_round_seed',{p_round:round}); sh.seed=seed;
+    const {data:bets}=await sb.from('shared_bets').select('*').eq('round_no',round);
+    (bets||[]).forEach(addBetRow);
+  }catch(e){}
+  if(tab==='shared') renderShared();
+}
+function addBetRow(r){
+  const pid=r.player_id;
+  sh.roundBets[pid]=sh.roundBets[pid]||{name:r.player_name,player:0,banker:0,tie:0};
+  sh.roundBets[pid].name=r.player_name;
+  sh.roundBets[pid][r.side]=Number(r.amount);
+}
+function myShared(){ return sh.roundBets[me.id]||{player:0,banker:0,tie:0}; }
+
+async function sharedBet(side){
+  if(sh.phase!=='bet'){ smsg('베팅이 마감되었습니다.'); return; }
+  if(selectedChip>me.balance){ smsg('잔액이 부족합니다.'); return; }
+  try{
+    const {data,error}=await sb.rpc('place_shared_bet',{p_player:me.id,p_round:sh.round,p_side:side,p_amount:selectedChip});
+    if(error) throw error;
+    me.balance=Number(data.balance); renderMe();
+    sh.roundBets[me.id]=sh.roundBets[me.id]||{name:me.name,player:0,banker:0,tie:0};
+    sh.roundBets[me.id][side]+=selectedChip;
+    renderShared(); smsg('');
+  }catch(e){ smsg(transErr(e.message||'')); }
+}
+function transErr(m){
+  if(m.includes('betting closed')) return '베팅 시간이 지났습니다.';
+  if(m.includes('round closed')) return '라운드가 바뀌었습니다.';
+  if(m.includes('insufficient')) return '잔액이 부족합니다.';
+  return m;
+}
+
+async function sharedLoop(){
+  if(!me) return;
+  const t=srvNow(); const round=Math.floor(t/60); const sec=t-round*60;
+  if(round!==sh.round && !sharedBusy){ sharedBusy=true; await initRound(round); sharedBusy=false; }
+  sh.sec=sec;
+  if(sec<50){ sh.phase='bet'; }
+  else { sh.phase='reveal'; if(!sh.revealed && sh.seed){ doReveal(round); } }
+  renderTimer();
+  if(tab==='shared') renderShared();
+}
+
+async function doReveal(round){
+  sh.revealed=true;
+  sh.hand=dealFromSeed(sh.seed);
+  sh.road.push(sh.hand.result==='player'?'P':sh.hand.result==='banker'?'B':'T');
+  // settle my bets (idempotent)
+  if(!sh.settled){
+    sh.settled=true;
+    const mine=myShared();
+    const ret=payout(sh.hand.result, mine);
+    try{ const {data}=await sb.rpc('settle_shared',{p_round:round,p_player:me.id,p_returns:ret});
+      if(data){ me.balance=Number(data.balance); me.net=Number(data.net_winnings); me.hands=data.hands_played; renderMe(); } }catch(e){}
+  }
+  // animate
+  const h=sh.hand;
+  rp('h',h,2,2);
+  setTimeout(()=>rp('h',h,h.player.length,h.banker.length), 600);
+  const mine=myShared();
+  const staked=(mine.player||0)+(mine.banker||0)+(mine.tie||0);
+  const net=payout(h.result,mine)-staked;
+  const names={player:'PLAYER 승',banker:'BANKER 승',tie:'TIE'};
+  flash('h_result', `${names[h.result]}${staked>0?' · '+(net>=0?'+':'')+won(net):''}`, net>0||(net===0&&staked===0));
+}
+
+function renderTimer(){
+  const sec=sh.sec||0;
+  const ph=document.getElementById('sh_phase');
+  if(sec<50){ ph.textContent='베팅'; ph.className='phasechip bet'; document.getElementById('sh_count').textContent=Math.ceil(50-sec)+'s'; }
+  else { ph.textContent='공개'; ph.className='phasechip reveal'; document.getElementById('sh_count').textContent=Math.ceil(60-sec)+'s'; }
+  document.getElementById('sh_round').textContent='라운드 #'+sh.round;
+}
+function renderShared(){
+  const agg={player:0,banker:0,tie:0};
+  Object.values(sh.roundBets).forEach(b=>{ agg.player+=b.player||0; agg.banker+=b.banker||0; agg.tie+=b.tie||0; });
+  const mine=myShared();
+  document.getElementById('h_aP').innerHTML=mine.player?won(mine.player):'&nbsp;';
+  document.getElementById('h_aB').innerHTML=mine.banker?won(mine.banker):'&nbsp;';
+  document.getElementById('h_aT').innerHTML=mine.tie?won(mine.tie):'&nbsp;';
+  document.getElementById('h_tP').textContent=agg.player?('전체 '+won(agg.player)):'';
+  document.getElementById('h_tB').textContent=agg.banker?('전체 '+won(agg.banker)):'';
+  document.getElementById('h_tT').textContent=agg.tie?('전체 '+won(agg.tie)):'';
+  renderRoad('h_road', sh.road);
+  // bet list
+  const rows=Object.values(sh.roundBets).map(b=>{
+    const parts=[]; if(b.player)parts.push('P '+won(b.player)); if(b.banker)parts.push('B '+won(b.banker)); if(b.tie)parts.push('T '+won(b.tie));
+    if(!parts.length) return '';
+    return `<div class="bl"><span>${escapeH(b.name)}</span><span>${parts.join(' / ')}</span></div>`;
+  }).filter(Boolean).join('');
+  document.getElementById('h_betlist').innerHTML = rows ? ('<div style="opacity:.7;margin-bottom:4px;">이번 라운드 베팅</div>'+rows) : '';
+}
+function smsg(m){ document.getElementById('h_msg').textContent=m; }
+
+/* ===================== PEOPLE / SPECTATE ===================== */
+async function fetchPlayers(){
+  const {data}=await sb.from('players').select('*').order('balance',{ascending:false}).limit(100);
+  playersCache={}; (data||[]).forEach(p=>playersCache[p.id]=p);
+}
+function isOnline(p){ return (Date.now()-new Date(p.last_seen).getTime()) < 90000; }
+function renderPeople(){
+  const list=Object.values(playersCache).sort((a,b)=> (isOnline(b)-isOnline(a)) || (b.balance-a.balance));
+  document.getElementById('peopleList').innerHTML = list.map(p=>`
+    <div class="row clickable ${watching===p.id?'sel':''}" onclick="spectate('${p.id}')">
+      <span class="dot ${isOnline(p)?'':'off'}"></span>
+      <span class="nm">${escapeH(p.name)}${p.id===me.id?' (나)':''}</span>
+      <span class="sub">${p.hands_played}판</span>
+      <span class="bal">${won(p.balance)}</span>
+    </div>`).join('') || '<div class="msg">아직 플레이어가 없습니다.</div>';
+  if(watching) renderSpectate();
+}
+function spectate(id){ watching=id; renderPeople(); renderSpectate(); }
+function renderSpectate(){
+  const p=playersCache[watching]; if(!p){ document.getElementById('spectate').innerHTML=''; return; }
+  const ls=p.live_state;
+  let body='';
+  if(ls && ls.h){
+    const h=ls.h;
+    const cards=hand=>hand.map(c=>`<div class="card ${c.red?'red':''}"><div class="r">${c.rank}</div><div class="s">${c.suit}</div></div>`).join('');
+    const names={player:'PLAYER 승',banker:'BANKER 승',tie:'TIE'};
+    body=`
+      <div class="hands">
+        <div class="hand P"><div class="htitle"><span class="hname" style="color:var(--player)">PLAYER</span><span class="htot">${h.pv}</span></div><div class="cards">${cards(h.player)}</div></div>
+        <div class="vs">VS</div>
+        <div class="hand B"><div class="htitle"><span class="hname" style="color:var(--banker)">BANKER</span><span class="htot">${h.bv}</span></div><div class="cards">${cards(h.banker)}</div></div>
+      </div>
+      <div class="resultbanner ${ls.net>=0?'win':'lose'}">${names[ls.result]} · ${ls.net>=0?'+':''}${won(ls.net||0)}</div>`;
+  } else if(ls && ls.phase==='betting'){
+    body=`<div class="resultbanner">베팅 중… (P ${won(ls.bets?.player||0)} / B ${won(ls.bets?.banker||0)} / T ${won(ls.bets?.tie||0)})</div>`;
+  } else {
+    body=`<div class="resultbanner">최근 플레이 기록 없음</div>`;
+  }
+  document.getElementById('spectate').innerHTML=`
+    <div class="table">
+      <div style="font-weight:800;margin-bottom:8px;">👀 ${escapeH(p.name)} 관전 · 잔액 ${won(p.balance)}</div>
+      ${body}
+    </div>`;
+}
+
+/* ===================== RANKING ===================== */
+function renderRank(){
+  const list=Object.values(playersCache).sort((a,b)=>b.balance-a.balance).slice(0,50);
+  const medal=['🥇','🥈','🥉'];
+  document.getElementById('rankList').innerHTML = list.map((p,i)=>`
+    <div class="row ${p.id===me.id?'sel':''}">
+      <span class="rank">${medal[i]||(i+1)}</span>
+      <span class="nm">${escapeH(p.name)}${p.id===me.id?' (나)':''}</span>
+      <span class="sub">순손익 ${p.net_winnings>=0?'+':''}${won(p.net_winnings)} · ${p.hands_played}판</span>
+      <span class="bal">${won(p.balance)}</span>
+    </div>`).join('') || '<div class="msg">아직 랭킹이 없습니다.</div>';
+}
+
+/* ===================== realtime ===================== */
+function subscribeRealtime(){
+  sb.channel('players-ch').on('postgres_changes',{event:'*',schema:'public',table:'players'},payload=>{
+    const r=payload.new; if(!r) return;
+    playersCache[r.id]=r;
+    if(r.id===me.id){ me.balance=Number(r.balance); me.net=Number(r.net_winnings); me.hands=r.hands_played; renderMe(); }
+    if(tab==='rank') renderRank();
+    if(tab==='people'){ renderPeople(); }
+  }).subscribe();
+
+  sb.channel('bets-ch').on('postgres_changes',{event:'*',schema:'public',table:'shared_bets'},payload=>{
+    const r=payload.new; if(!r || r.round_no!==sh.round) return;
+    addBetRow(r);
+    if(tab==='shared') renderShared();
+  }).subscribe();
+}
+
+/* ===================== settle pending (missed rounds) ===================== */
+async function settlePending(){
+  try{
+    const cur=Math.floor(srvNow()/60);
+    const {data:bets}=await sb.from('shared_bets').select('round_no,side,amount').eq('player_id',me.id);
+    if(!bets||!bets.length) return;
+    const {data:setl}=await sb.from('shared_settlements').select('round_no').eq('player_id',me.id);
+    const done=new Set((setl||[]).map(s=>s.round_no));
+    const byRound={};
+    bets.forEach(b=>{ if(b.round_no<cur && !done.has(b.round_no)){ (byRound[b.round_no]=byRound[b.round_no]||{player:0,banker:0,tie:0})[b.side]+=Number(b.amount); } });
+    for(const rno of Object.keys(byRound)){
+      const {data:seed}=await sb.rpc('get_round_seed',{p_round:Number(rno)});
+      if(!seed) continue;
+      const h=dealFromSeed(seed);
+      const ret=payout(h.result, byRound[rno]);
+      const {data}=await sb.rpc('settle_shared',{p_round:Number(rno),p_player:me.id,p_returns:ret});
+      if(data){ me.balance=Number(data.balance); me.net=Number(data.net_winnings); me.hands=data.hands_played; }
+    }
+    renderMe();
+  }catch(e){}
+}
+
+function escapeH(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* ===================== boot ===================== */
+(async()=>{ renderChips(); await tryAutoLogin(); })();
+</script>
+</body>
+</html>
